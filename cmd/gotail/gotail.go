@@ -58,12 +58,12 @@ func tailFile(filename string, config tail.Config, done chan bool) {
 		return
 	}
 	notify := make(chan event.Event, 1)
-	t.Notify(notify, event.Deleted|event.Reopened)
+	t.Notify(notify, event.Deleted|event.Truncated|event.Reopened)
 Loop:
 	for {
 		select {
 		case info := <-notify:
-			fmt.Printf("%s %s\n", info.Filename, info.Flag)
+			fmt.Printf("%s %06b %s\n", info.Filename, info.Flag, info.Flag)
 		case line, ok := <-t.Lines:
 			if !ok {
 				break Loop

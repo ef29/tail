@@ -28,10 +28,11 @@ func (e Flag) String() string {
 	return "Unknown"
 }
 
+// Is return that a given flag 'f' is equal to 'e'.
+func (e Flag) Is(f Flag) bool { return e == f }
+
 // Has return that a given flag 'f' is set on 'e'.
-func (e Flag) Has(f Flag) bool {
-	return e&f > 0
-}
+func (e Flag) Has(f Flag) bool { return e&f > 0 }
 
 type Event struct {
 	Filename string
@@ -52,11 +53,11 @@ func Notify(oc Flag, fp string, dests []*Notification) {
 		if no.sendto == nil {
 			continue
 		}
-		if no.flag.Has(oc) {
+		if !no.flag.Has(oc) {
 			continue
 		}
 		select {
-		case no.sendto <- Event{Filename: fp, Flag: ev}:
+		case no.sendto <- Event{Filename: fp, Flag: oc}:
 		default:
 		}
 	}

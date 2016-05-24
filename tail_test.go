@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hpcloud/tail/event"
 	"github.com/hpcloud/tail/ratelimiter"
 	"github.com/hpcloud/tail/watch"
 )
@@ -256,6 +257,38 @@ func TestRateLimiting(t *testing.T) {
 	tailTest.RemoveFile("test.txt")
 
 	tailTest.Cleanup(tail, true)
+}
+
+func TestNotify(t *testing.T) {
+	tailTest := NewTailTest("event-notify", t)
+	tailTest.CreateFile("test.txt", "hello\nworld\nagain\nmore\n")
+	config := Config{
+		Follow: true,
+		ReOpen: true,
+	}
+	notify := make(chan event.Event, 1)
+	tail := tailTest.StartTail("test.txt", config)
+	tail.Notify(notify, event.All)
+
+	check := func(e event.Flag) {
+		tail.notify(e)
+		select {
+		case ei := <-notify:
+			t.Logf("%s %06b %s\n", ei.Filename, ei.Flag, ei.Flag)
+			if !ei.Flag.Is(e) {
+				t.Fatalf("!ok")
+			}
+		}
+	}
+
+	check(event.Modified)
+	check(event.Deleted)
+	check(event.Truncated)
+	check(event.Reopened)
+	check(event.Dying)
+
+	tail.Done()
+	tail.Cleanup()
 }
 
 func TestTell(t *testing.T) {

@@ -403,8 +403,7 @@ func (tail *Tail) Notify(to chan<- event.Event, flag event.Flag) {
 	defer tail.lk.Unlock()
 	tail.notifications = append(
 		tail.notifications,
-		event.NewNotification(to, flag),
-	)
+		event.NewNotification(to, flag))
 }
 
 func (tail *Tail) notify(ev event.Flag) {
