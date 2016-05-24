@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hpcloud/tail/event"
 	"github.com/hpcloud/tail/ratelimiter"
 	"github.com/hpcloud/tail/util"
 	"github.com/hpcloud/tail/watch"
@@ -81,6 +82,8 @@ type Tail struct {
 	file   *os.File
 	reader *bufio.Reader
 
+	notifications []*event.Notification
+
 	watcher watch.FileWatcher
 	changes *watch.FileChanges
 
@@ -106,9 +109,10 @@ func TailFile(filename string, config Config) (*Tail, error) {
 	}
 
 	t := &Tail{
-		Filename: filename,
-		Lines:    make(chan *Line),
-		Config:   config,
+		Filename:      filename,
+		Lines:         make(chan *Line),
+		Config:        config,
+		notifications: make([]*event.Notification, 0),
 	}
 
 	// when Logger was not specified in config, use default logger
@@ -349,8 +353,10 @@ func (tail *Tail) waitForChanges() error {
 
 	select {
 	case <-tail.changes.Modified:
+		tail.notify(event.Modified)
 		return nil
 	case <-tail.changes.Deleted:
+		tail.notify(event.Deleted)
 		tail.changes = nil
 		if tail.ReOpen {
 			// XXX: we must not log from a library.
@@ -358,6 +364,7 @@ func (tail *Tail) waitForChanges() error {
 			if err := tail.reopen(); err != nil {
 				return err
 			}
+			tail.notify(event.Reopened)
 			tail.Logger.Printf("Successfully reopened %s", tail.Filename)
 			tail.openReader()
 			return nil
@@ -366,18 +373,44 @@ func (tail *Tail) waitForChanges() error {
 			return ErrStop
 		}
 	case <-tail.changes.Truncated:
+		tail.notify(event.Truncated)
 		// Always reopen truncated files (Follow is true)
 		tail.Logger.Printf("Re-opening truncated file %s ...", tail.Filename)
 		if err := tail.reopen(); err != nil {
 			return err
 		}
+		tail.notify(event.Reopened)
 		tail.Logger.Printf("Successfully reopened truncated %s", tail.Filename)
 		tail.openReader()
 		return nil
 	case <-tail.Dying():
+		tail.notify(event.Dying)
 		return ErrStop
 	}
 	panic("unreachable")
+}
+
+// Notify notifies events to a given channel, like signal.Notify.
+// Notify will not block sending to channel: the caller must ensure that
+// channel has sufficient buffer space to keep up with the expected notification rate.
+//
+//   Example:
+//     c := make(chan event.Event, 1)
+//     tail.Notify(c, event.Modified|event.Truncated)
+//     for e := range c { ... }
+func (tail *Tail) Notify(to chan<- event.Event, flag event.Flag) {
+	tail.lk.Lock()
+	defer tail.lk.Unlock()
+	tail.notifications = append(
+		tail.notifications,
+		event.NewNotification(to, flag),
+	)
+}
+
+func (tail *Tail) notify(ev event.Flag) {
+	tail.lk.Lock()
+	defer tail.lk.Unlock()
+	event.Notify(ev, tail.Filename, tail.notifications)
 }
 
 func (tail *Tail) openReader() {

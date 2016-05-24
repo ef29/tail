@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/hpcloud/tail"
+	"github.com/hpcloud/tail/event"
 )
 
 func args2config() (tail.Config, int64) {
@@ -56,9 +57,21 @@ func tailFile(filename string, config tail.Config, done chan bool) {
 		fmt.Println(err)
 		return
 	}
-	for line := range t.Lines {
-		fmt.Println(line.Text)
+	notify := make(chan event.Event, 1)
+	t.Notify(notify, event.Deleted|event.Reopened)
+Loop:
+	for {
+		select {
+		case info := <-notify:
+			fmt.Printf("%s %s\n", info.Filename, info.Flag)
+		case line, ok := <-t.Lines:
+			if !ok {
+				break Loop
+			}
+			fmt.Println(line.Text)
+		}
 	}
+
 	err = t.Wait()
 	if err != nil {
 		fmt.Println(err)
